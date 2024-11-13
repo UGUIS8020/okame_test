@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}      
+    <div class="container">
+        {{ current_user }}
+  1{{ current_user.is_authenticated }}1
+  2{{ current_user.is_administrator }}2
+  3{{ current_user.administrator }}3
+        <p>こんにちは</p>
+        
+        <!-- 中央寄せでレスポンシブ対応 -->
+        <div class="text-center">
+            <img src="/static/images/top.jpg" 
+                 alt="画像の説明" 
+                 class="img-fluid"
+                 style="max-width: 100%; height: auto;">
+        </div>
+    </div>
+{% endblock %}
