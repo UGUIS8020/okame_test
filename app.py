@@ -32,12 +32,11 @@ login_manager = LoginManager()
 
 def create_app():
     """アプリケーションの初期化と設定"""
-    try:
-        # 環境変数の読み込み
+    try:        
         load_dotenv()
-
-        # シークレットキーの設定
-        app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", os.urandom(24))
+        
+        app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")        
+        print(f"Secret key: {app.config['SECRET_KEY']}")
         
         # AWS S3の設定
         app.config['S3_BUCKET'] = os.getenv("S3_BUCKET")
@@ -89,6 +88,7 @@ def tokyo_time():
 
 @login_manager.user_loader
 def load_user(user_id):
+    app.logger.debug(f"Loading user with ID: {user_id}")
     # ユーザーIDが無ければNoneを返す（不要なDB アクセスを防ぐ）
     if not user_id:
         return None
@@ -97,6 +97,7 @@ def load_user(user_id):
         response = app.dynamodb.get_item(
             TableName=app.table_name,
             Key={'user_id': {'S': user_id}}
+            # Key={'user_id': user_id}
         )
         
         # ユーザーが見つかった場合のみUserオブジェクトを作成
@@ -113,10 +114,7 @@ def load_user(user_id):
     except Exception as e:
         # エラーはデバッグレベルでログを残す（エラー表示を抑制）
         app.logger.debug(f"User loader debug: {str(e)}")
-        return None
-    
-    
-    
+        return None   
 
 class RegistrationForm(FlaskForm):
     organization = SelectField('所属', choices=[('uguis', '鶯'),('other', 'その他')], default='uguis', validators=[DataRequired(message='所属を選択してください')])
@@ -199,6 +197,7 @@ class User(UserMixin):
                  gender, date_of_birth, post_code, address, phone, 
                  organization='uguis', administrator=False, 
                  created_at=None, updated_at=None):
+        super().__init__()
         self.user_id = user_id
         self.display_name = display_name
         self.user_name = user_name
@@ -272,9 +271,9 @@ class User(UserMixin):
         """パスワードの検証"""
         return check_password_hash(self.password_hash, password)   
         
-    @property
-    def is_authenticated(self):
-        return True  # ログインしているユーザーは常にTrue
+    # @property
+    # def is_authenticated(self):
+    #     return True  # ログインしているユーザーは常にTrue
 
     @property
     def is_administrator(self):  # 管理者かどうかを確認するための別のプロパティ
@@ -366,7 +365,9 @@ class LoginForm(FlaskForm):
         return self.user
 
 @app.route("/")
-def index():       
+def index(): 
+        app.logger.info(f"User ID: {current_user.get_id() if current_user.is_authenticated else 'Anonymous'}, is_authenticated: {current_user.is_authenticated}")      
+        app.logger.debug(f"Accessing index - User ID: {current_user.get_id()}, is_authenticated: {current_user.is_authenticated}")
         return render_template("index.html", posts=[])
     
 
@@ -454,14 +455,16 @@ def signup():
             for error in errors:
                 flash(f'{form[field].label.text}: {error}', 'error')
     
-    return render_template('signup.html', form=form)
+    return render_template('signup.html', form=form)       
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+
     if current_user.is_authenticated:
         return redirect(url_for('index'))
 
-    form = LoginForm(dynamodb_table=app.table)
+    # form = LoginForm(dynamodb_table=app.table)
+    form = LoginForm()
     if form.validate_on_submit():
         try:
             # メールアドレスでユーザーを取得
@@ -508,8 +511,8 @@ def login():
                 return render_template('login.html', form=form)
 
             if user.check_password(form.password.data):
-                login_user(user, remember=form.remember.data)
-                app.logger.info(f"User logged in successfully - ID: {user.user_id}")
+                login_user(user, remember=form.remember.data)                                             
+                app.logger.info(f"User logged in successfully - ID: {user.user_id}, is_authenticated: {current_user.is_authenticated}")
                 flash('ログインに成功しました。', 'success')
                 
                 next_page = request.args.get('next')
@@ -659,6 +662,6 @@ def delete(id):
 
 
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
+    with app.app_context():    
+        pass    
     app.run(debug=True)
