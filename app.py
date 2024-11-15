@@ -35,7 +35,8 @@ def create_app():
     try:        
         load_dotenv()
         
-        app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")        
+        # app.config["SECRET_KEY"] = os.getenv("SECRET_KEY") 
+        app.config["SECRET_KEY"] = ("your_secret_key_here")         
         print(f"Secret key: {app.config['SECRET_KEY']}")
         
         # AWS S3の設定
@@ -69,7 +70,7 @@ def create_app():
         # Flask-Loginの設定
         login_manager.init_app(app)
         login_manager.login_view = 'login'
-        login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
+        login_manager.login_message = 'このページにアクセスするにはログインが必要です。'        
         
         # DynamoDBテーブルの初期化
         init_tables()
@@ -263,22 +264,20 @@ class User(UserMixin):
             "user_name": {"S": self.user_name}
         }
 
-    def set_password(self, password):
-        """パスワードをハッシュ化して設定"""
+    def set_password(self, password):        
         self.password_hash = generate_password_hash(password)
 
-    def check_password(self, password):
-        """パスワードの検証"""
-        return check_password_hash(self.password_hash, password)   
-        
-    # @property
-    # def is_authenticated(self):
-    #     return True  # ログインしているユーザーは常にTrue
+    def check_password(self, password):        
+        return check_password_hash(self.password_hash, password) 
+
+    @property
+    def password(self):
+        raise AttributeError('password is not a readable attribute')
 
     @property
     def is_administrator(self):  # 管理者かどうかを確認するための別のプロパティ
         print(f"Checking administrator status: {self.administrator}")
-        return self.administrator
+        return self.administrator       
 
 
 # DynamoDBからデータを取得してUserインスタンスを作成する関数
@@ -499,6 +498,7 @@ def login():
                     phone=user_data['phone'],
                     administrator=user_data['administrator']
                 )
+                
                                 
             except KeyError as e:
                 app.logger.error(f"Error creating user object: {str(e)}")
@@ -511,7 +511,10 @@ def login():
                 return render_template('login.html', form=form)
 
             if user.check_password(form.password.data):
-                login_user(user, remember=form.remember.data)                                             
+                login_user(user, remember=form.remember.data)  
+                app.logger.debug(f"Session after login: {session}")  # セッション情報を確認
+                app.logger.info(f"User logged in: {user.get_id()}")
+                app.logger.debug(f"Session data: {session}")                                           
                 app.logger.info(f"User logged in successfully - ID: {user.user_id}, is_authenticated: {current_user.is_authenticated}")
                 flash('ログインに成功しました。', 'success')
                 
