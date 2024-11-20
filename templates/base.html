@@ -64,6 +64,12 @@
             color: #ffae00; /* ゴールドで目立たせる */
             font-size: 1.2rem; /* 少し大きく */            
           }
+        .text-guest {
+          font-weight: bold;
+          color: #ffffff; 
+          font-size: 1.2rem;            
+        }
+        
       
         
     </style>
@@ -87,29 +93,38 @@
 
             
             <ul class="navbar-nav ms-auto">
-              <li class="nav-item">                         
-                {% if current_user.is_authenticated %}                
-                    <p>Administrator: {{ current_user.is_administrator() }}</p>
+              <li class="nav-item">  
+
+                     {% if current_user.is_authenticated and current_user.is_administrator %}              
                     <a class="nav-link" href="{{ url_for('user_maintenance') }}">登録者</a>
-                {% endif %}
+                    {% endif %}
+                
                 </li>
                 
                                
                 <li class="nav-item">
                 <a class="nav-link" href="#">ユーザー</a>
                 </li>
-
-                <li class="nav-item">
-                  <a class="nav-link" href="{{ url_for('login') }}">ログイン</a>
-                  </li>
-                {% if current_user.is_authenticated %}
+                {% if current_user.is_authenticated and current_user.is_administrator %}
                 <li class="nav-item">
                   <a class="nav-link" href="{{ url_for('logout') }}">ログアウト</a>
-                </li>    
+                </li> 
+                {% else %}
+                <li class="nav-item">
+                  <a class="nav-link" href="{{ url_for('login') }}">ログイン</a>
+                </li>
+                {% endif %}                
+
+                {% if current_user.is_authenticated and current_user.is_administrator %}
                 <span class="navbar-text ms-3 text-highlight">
                   {{ current_user.display_name }}
-              </span> 
-                {% endif %}         
+               </span>
+               {% else %}
+               
+                <a class="nav-link" href="{{ url_for('signup') }}">新規登録</a>
+               
+               {% endif %}
+                         
             </ul>
           </div>
         </div>

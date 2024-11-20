@@ -69,6 +69,7 @@ def create_app():
 
         # Flask-Loginの設定
         login_manager.init_app(app)
+        login_manager.session_protection = "strong"
         login_manager.login_view = 'login'
         login_manager.login_message = 'このページにアクセスするにはログインが必要です。'        
         
@@ -88,34 +89,65 @@ def tokyo_time():
     return datetime.now(pytz.timezone('Asia/Tokyo'))
 
 @login_manager.user_loader
+# def load_user(user_id):
+#     app.logger.debug(f"Loading user with ID: {user_id}")
+#     # ユーザーIDが無ければNoneを返す（不要なDB アクセスを防ぐ）
+#     if not user_id:
+#         return None        
+#     try:
+#         response = app.dynamodb.get_item(
+#             TableName=app.table_name,
+#             Key={'user_id': {'S': user_id}}
+#             # Key={'user_id': user_id}
+#         )
+        
+#         # ユーザーが見つかった場合のみUserオブジェクトを作成
+#         if 'Item' in response:
+#             user_data = response['Item']
+#             return User(
+#                 user_id=user_data['user_id']['S'],
+#                 email=user_data['email']['S'],
+#                 password_hash=user_data['password']['S'],
+#                 administrator=bool(user_data.get('administrator', {}).get('BOOL', False))
+#             )
+#         else:
+#             app.logger.info(f"No user found for ID: {user_id}")
+#             return None
+                
+#     except Exception as e:
+#         # エラーはデバッグレベルでログを残す（エラー表示を抑制）
+#         app.logger.debug(f"User loader debug: {str(e)}")
+#         return None 
+
 def load_user(user_id):
     app.logger.debug(f"Loading user with ID: {user_id}")
-    # ユーザーIDが無ければNoneを返す（不要なDB アクセスを防ぐ）
+    
     if not user_id:
+        app.logger.warning("No user_id provided to load_user")
         return None
-        
+
     try:
         response = app.dynamodb.get_item(
             TableName=app.table_name,
             Key={'user_id': {'S': user_id}}
-            # Key={'user_id': user_id}
         )
         
-        # ユーザーが見つかった場合のみUserオブジェクトを作成
+        app.logger.debug(f"DynamoDB response: {response}")
+
         if 'Item' in response:
             user_data = response['Item']
-            return User(
-                user_id=user_data['user_id']['S'],
-                email=user_data['email']['S'],
-                password_hash=user_data['password']['S'],
-                administrator=bool(user_data.get('administrator', {}).get('BOOL', False))
-            )
-        return None
-        
+            user = User.from_dynamodb_item(user_data)
+            app.logger.info(f"User loaded successfully: {user.__dict__}")
+            return user
+        else:
+            app.logger.info(f"No user found for ID: {user_id}")
+            return None
+
     except Exception as e:
-        # エラーはデバッグレベルでログを残す（エラー表示を抑制）
-        app.logger.debug(f"User loader debug: {str(e)}")
-        return None   
+        app.logger.error(f"Error loading user with ID: {user_id}: {str(e)}", exc_info=True)
+        return None
+
+
 
 class RegistrationForm(FlaskForm):
     organization = SelectField('所属', choices=[('uguis', '鶯'),('other', 'その他')], default='uguis', validators=[DataRequired(message='所属を選択してください')])
@@ -220,12 +252,6 @@ class User(UserMixin):
 
     @staticmethod
     def from_dynamodb_item(item):
-        """DynamoDBのアイテムからUserオブジェクトを生成"""
-        raw_admin = item.get('administrator', {})
-        print(f"Raw administrator data: {raw_admin}")
-        admin_bool = raw_admin.get('BOOL', False)
-        print(f"Administrator bool value: {admin_bool}, type: {type(admin_bool)}")
-
         return User(
             user_id=item.get('user_id', {}).get('S'),
             display_name=item.get('display_name', {}).get('S'),
@@ -246,23 +272,25 @@ class User(UserMixin):
 
     def to_dynamodb_item(self):
         """UserオブジェクトをDynamoDBアイテムに変換"""
-        return {
+        item = {
             "user_id": {"S": self.user_id},
             "organization": {"S": self.organization},
             "address": {"S": self.address},
             "administrator": {"BOOL": self.administrator},
             "created_at": {"S": self.created_at},
-            "date_of_birth": {"S": self.date_of_birth if self.date_of_birth else ''},
             "display_name": {"S": self.display_name},
             "email": {"S": self.email},
             "furigana": {"S": self.furigana},
             "gender": {"S": self.gender},
-            "password": {"S": self.password_hash},  # ハッシュ化されたパスワードを保存
+            "password": {"S": self.password_hash},
             "phone": {"S": self.phone},
             "post_code": {"S": self.post_code},
             "updated_at": {"S": self.updated_at},
             "user_name": {"S": self.user_name}
         }
+        if self.date_of_birth:  # Noneの場合はスキップ
+            item["date_of_birth"] = {"S": self.date_of_birth}
+        return item
 
     def set_password(self, password):        
         self.password_hash = generate_password_hash(password)
@@ -281,6 +309,44 @@ class User(UserMixin):
 
 
 # DynamoDBからデータを取得してUserインスタンスを作成する関数
+# def get_user_from_dynamodb(user_id):
+#     try:
+#         # DynamoDBからユーザーデータを取得
+#         response = app.dynamodb.get_item(
+#             TableName=app.table_name,
+#             Key={"user_id": {"S": user_id}}
+#         )
+        
+#         # データが存在しない場合の処理
+#         if 'Item' not in response:
+#             app.logger.info(f"User not found in DynamoDB for user_id: {user_id}")
+#             return None
+
+#         item = response['Item']
+
+#         # DynamoDBのデータをUserクラスのインスタンスに変換
+#         user = User(
+#             user_id=item['user_id']['S'],
+#             display_name=item['display_name']['S'],
+#             user_name=item['user_name']['S'],
+#             furigana=item['furigana']['S'],
+#             email=item['email']['S'],
+#             password_hash=item['password']['S'],  # パスワードハッシュを設定
+#             gender=item['gender']['S'],
+#             date_of_birth=datetime.strptime(item['date_of_birth']['S'], '%Y-%m-%d').date(),
+#             post_code=item['post_code']['S'],
+#             address=item['address']['S'],
+#             phone=item['phone']['S'],
+#             organization=item.get('organization', {}).get('S', 'uguis'),
+#             administrator=bool(item.get('administrator', {}).get('BOOL', False))  # ブール型に変換
+#         )
+        
+#         return user
+
+#     except Exception as e:
+#         app.logger.error(f"Error fetching user from DynamoDB for user_id: {user_id}: {str(e)}", exc_info=True)
+#         return None     
+
 def get_user_from_dynamodb(user_id):
     try:
         # DynamoDBからユーザーデータを取得
@@ -289,35 +355,21 @@ def get_user_from_dynamodb(user_id):
             Key={"user_id": {"S": user_id}}
         )
         
-        # データが存在しない場合の処理
+        # データが存在しない場合
         if 'Item' not in response:
-            print("User not found in DynamoDB.")
+            app.logger.info(f"User not found in DynamoDB for user_id: {user_id}")
             return None
 
         item = response['Item']
 
         # DynamoDBのデータをUserクラスのインスタンスに変換
-        user = User(
-            user_id=item['user_id']['S'],
-            display_name=item['display_name']['S'],
-            user_name=item['user_name']['S'],
-            furigana=item['furigana']['S'],
-            email=item['email']['S'],
-            password_hash=item['password']['S'],  # パスワードハッシュを設定
-            gender=item['gender']['S'],
-            date_of_birth=datetime.strptime(item['date_of_birth']['S'], '%Y-%m-%d').date(),
-            post_code=item['post_code']['S'],
-            address=item['address']['S'],
-            phone=item['phone']['S'],
-            organization=item.get('organization', {}).get('S', 'uguis'),
-            administrator=bool(item.get('administrator', {}).get('BOOL', False))  # ブール型に変換
-        )
-        
+        user = User.from_dynamodb_item(item)
+        app.logger.debug(f"User successfully loaded for user_id: {user_id}")
         return user
 
     except Exception as e:
-        print(f"Error fetching user from DynamoDB: {str(e)}")
-        return None       
+        app.logger.error(f"Error fetching user from DynamoDB for user_id: {user_id}: {str(e)}", exc_info=True)
+        return None  
 
 class LoginForm(FlaskForm):
     email = StringField('メールアドレス', validators=[DataRequired(message='メールアドレスを入力してください'), Email(message='正しいメールアドレスの形式で入力してください')])
@@ -361,7 +413,8 @@ class LoginForm(FlaskForm):
 
     def get_user(self):
         """ログイン成功時のユーザー情報を返す"""
-        return self.user
+        return self.user    
+
 
 @app.route("/")
 def index(): 
@@ -521,8 +574,8 @@ def login():
                 next_page = request.args.get('next')
                 if not next_page or not is_safe_url(next_page):
                     next_page = url_for('index')
-                return redirect(next_page)
-            
+                return redirect(next_page)            
+                        
             app.logger.warning(f"Invalid password attempt for email: {form.email.data}")
             time.sleep(random.uniform(0.1, 0.3))
             flash('メールアドレスまたはパスワードが正しくありません。', 'error')
@@ -532,6 +585,7 @@ def login():
             flash('ログイン処理中にエラーが発生しました。', 'error')
     
     return render_template('login.html', form=form)
+    
 
 # セキュアなリダイレクト先かを確認する関数
 def is_safe_url(target):
